@@ -10,6 +10,7 @@ import {
   saveSaleToDB, 
   getSalesFromDB, 
   saveAllSalesToDB,
+  updateProductInDB,
   exportBackup,
   manualSyncAll
 } from './storageService';
@@ -54,7 +55,7 @@ const App: React.FC = () => {
     loadData();
   }, []);
 
-  // Tự động sao lưu cục bộ khi có thay đổi
+  // Tự động sao lưu cục bộ khi có thay đổi danh sách (Trừ khi đang sync)
   useEffect(() => { 
     if (!isLoading && !isSyncing) { 
       saveProductsToDB(products); 
@@ -118,14 +119,25 @@ const App: React.FC = () => {
       status: 'success'
     };
 
+    // Cập nhật State nhanh để phản hồi UI
     const updatedSales = [newSale, ...sales];
-    const updatedProducts = products.map(p => p.id === selectedProduct.id ? { ...p, stock: p.stock - sellQuantity } : p);
+    const targetProduct = { ...selectedProduct, stock: selectedProduct.stock - sellQuantity };
+    const updatedProducts = products.map(p => p.id === selectedProduct.id ? targetProduct : p);
 
     setSales(updatedSales);
     setProducts(updatedProducts);
     
-    await saveSaleToDB(newSale);
-    await saveProductsToDB(updatedProducts);
+    // Đồng bộ Cloud từng bước để tránh treo app
+    try {
+      const saleResult = await saveSaleToDB(newSale);
+      const stockResult = await updateProductInDB(targetProduct);
+      
+      if (!saleResult.success || !stockResult.success) {
+        console.warn("Lưu Local thành công nhưng Cloud thất bại. Dữ liệu sẽ được đồng bộ sau.");
+      }
+    } catch (e) {
+      console.error("Sale Sync Error:", e);
+    }
 
     setIsSelling(false);
     setSellQuantity(1);
@@ -411,7 +423,6 @@ const App: React.FC = () => {
                            <p className="text-[9px] font-bold text-slate-500 uppercase">{isSyncing ? 'Đang tải dữ liệu...' : 'Lấy dữ liệu từ Supabase'}</p>
                          </div>
                       </div>
-                      {/* Fixed: Removed duplicate strokeWidth attribute below */}
                       <svg className={`w-5 h-5 text-slate-700 ${isSyncing ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" strokeWidth="2.5"></path></svg>
                    </button>
                    <div className="h-[1px] bg-white/5 mx-6"></div>

@@ -29,20 +29,24 @@ export const initDB = (): Promise<IDBDatabase> => {
 // --- LOGIC ĐỒNG BỘ ĐÁM MÂY ---
 const tryCloudSync = async (table: string, data: any[]) => {
   try {
-    if (data.length === 0) return;
+    if (data.length === 0) return { success: true };
+    
     // Sử dụng upsert để cập nhật nếu trùng ID, thêm mới nếu chưa có
     const { error } = await supabase.from(table).upsert(data, { onConflict: 'id' });
+    
     if (error) {
-      console.warn(`Cloud Sync Warning (${table}):`, error.message);
+      console.error(`Supabase Sync Error (${table}):`, error.message, error.details);
+      return { success: false, error: error.message };
     }
-  } catch (e) {
-    console.error(`Critical Sync Error:`, e);
+    return { success: true };
+  } catch (e: any) {
+    console.error(`Critical Connection Error:`, e);
+    return { success: false, error: e.message };
   }
 };
 
 // --- QUẢN LÝ SẢN PHẨM ---
 export const saveProductsToDB = async (products: Product[]) => {
-  // 1. Lưu cục bộ trước để phản hồi nhanh
   const db = await initDB();
   const tx = db.transaction(STORE_PRODUCTS, "readwrite");
   const store = tx.objectStore(STORE_PRODUCTS);
@@ -52,16 +56,22 @@ export const saveProductsToDB = async (products: Product[]) => {
     tx.oncomplete = resolve;
   });
 
-  // 2. Đồng bộ lên đám mây (background)
-  tryCloudSync('products', products);
+  return tryCloudSync('products', products);
+};
+
+// Cập nhật 1 sản phẩm duy nhất (Dùng khi bán hàng để tối ưu tốc độ)
+export const updateProductInDB = async (product: Product) => {
+  const db = await initDB();
+  const tx = db.transaction(STORE_PRODUCTS, "readwrite");
+  tx.objectStore(STORE_PRODUCTS).put(product);
+  
+  return tryCloudSync('products', [product]);
 };
 
 export const getProductsFromDB = async (): Promise<Product[]> => {
   try {
-    // Luôn ưu tiên lấy dữ liệu mới nhất từ Supabase
     const { data, error } = await supabase.from('products').select('*').order('createdAt', { ascending: false });
     if (!error && data) {
-       // Nếu có dữ liệu từ Cloud, cập nhật lại vào Local để sử dụng offline
        const db = await initDB();
        const tx = db.transaction(STORE_PRODUCTS, "readwrite");
        const store = tx.objectStore(STORE_PRODUCTS);
@@ -73,7 +83,6 @@ export const getProductsFromDB = async (): Promise<Product[]> => {
     console.warn("Cloud pull failed, falling back to local storage");
   }
 
-  // Fallback: Lấy từ Local nếu Cloud lỗi hoặc không có mạng
   const db = await initDB();
   const tx = db.transaction(STORE_PRODUCTS, "readonly");
   const request = tx.objectStore(STORE_PRODUCTS).getAll();
@@ -87,7 +96,9 @@ export const saveSaleToDB = async (sale: Sale) => {
   const db = await initDB();
   const tx = db.transaction(STORE_SALES, "readwrite");
   tx.objectStore(STORE_SALES).put(sale);
-  tryCloudSync('sales', [sale]);
+  
+  // Trả về kết quả đồng bộ Cloud để UI có thể thông báo
+  return tryCloudSync('sales', [sale]);
 };
 
 export const saveAllSalesToDB = async (sales: Sale[]) => {
@@ -96,7 +107,7 @@ export const saveAllSalesToDB = async (sales: Sale[]) => {
   const store = tx.objectStore(STORE_SALES);
   store.clear();
   sales.forEach(s => store.put(s));
-  tryCloudSync('sales', sales);
+  return tryCloudSync('sales', sales);
 };
 
 export const getSalesFromDB = async (): Promise<Sale[]> => {
@@ -124,7 +135,7 @@ export const getSalesFromDB = async (): Promise<Sale[]> => {
 export const exportBackup = async () => {
   const products = await getProductsFromDB();
   const sales = await getSalesFromDB();
-  const data = { version: "4.5-cloud-ready", timestamp: Date.now(), products, sales };
+  const data = { version: "4.6-cloud-sync-fix", timestamp: Date.now(), products, sales };
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
@@ -135,7 +146,6 @@ export const exportBackup = async () => {
 };
 
 export const manualSyncAll = async () => {
-  // Ép buộc làm mới dữ liệu từ cloud
   const products = await getProductsFromDB();
   const sales = await getSalesFromDB();
   return { products, sales };
