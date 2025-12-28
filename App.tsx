@@ -10,7 +10,8 @@ import {
   saveSaleToDB, 
   getSalesFromDB, 
   saveAllSalesToDB,
-  exportBackup
+  exportBackup,
+  manualSyncAll
 } from './storageService';
 
 const App: React.FC = () => {
@@ -22,6 +23,7 @@ const App: React.FC = () => {
   const [isScanning, setIsScanning] = useState(false);
   const [scanningStatus, setScanningStatus] = useState<'idle' | 'processing'>('idle');
   const [isLoading, setIsLoading] = useState(true);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState('Tất cả');
@@ -54,15 +56,29 @@ const App: React.FC = () => {
 
   // Tự động sao lưu cục bộ khi có thay đổi
   useEffect(() => { 
-    if (!isLoading) { 
+    if (!isLoading && !isSyncing) { 
       saveProductsToDB(products); 
       saveAllSalesToDB(sales); 
     } 
-  }, [products, sales, isLoading]);
+  }, [products, sales, isLoading, isSyncing]);
 
   const formatCurrency = (n: number) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(n);
 
   const generateId = () => Math.random().toString(36).substring(2, 10).toUpperCase();
+
+  const handleManualSync = async () => {
+    setIsSyncing(true);
+    try {
+      const data = await manualSyncAll();
+      setProducts(data.products);
+      setSales(data.sales);
+      alert("Đã đồng bộ dữ liệu mới nhất từ Supabase!");
+    } catch (err) {
+      alert("Lỗi đồng bộ đám mây. Vui lòng kiểm tra kết nối.");
+    } finally {
+      setIsSyncing(false);
+    }
+  };
 
   const handleProductSave = async (data: any) => {
     let updatedProducts;
@@ -78,9 +94,8 @@ const App: React.FC = () => {
     }
     
     setProducts(updatedProducts);
-    await saveProductsToDB(updatedProducts); // Lưu trực tiếp để đảm bảo an toàn
+    await saveProductsToDB(updatedProducts);
     
-    // Reset state
     setIsEditing(false);
     setSelectedProduct(null);
     setView('inventory');
@@ -130,7 +145,6 @@ const App: React.FC = () => {
     };
   }, [sales, products]);
 
-  // Fix: Defined reportData to resolve 'Cannot find name reportData' errors
   const reportData = useMemo(() => {
     const fromDate = new Date(reportFrom).setHours(0, 0, 0, 0);
     const toDate = new Date(reportTo).setHours(23, 59, 59, 999);
@@ -158,7 +172,7 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen pb-32 text-slate-200 bg-[#020617]">
-      {/* HEADER Profile */}
+      {/* HEADER */}
       {(view === 'admin_home' || view === 'pos' || view === 'inventory' || view === 'reports' || view === 'settings') && (
         <header className="p-6 pt-12 flex justify-between items-center bg-[#020617]/80 sticky top-0 z-40 border-b border-white/5 backdrop-blur-xl">
            <div className="flex items-center gap-3">
@@ -170,9 +184,12 @@ const App: React.FC = () => {
                  <h2 className="text-sm font-black text-white">Admin Store</h2>
               </div>
            </div>
-           <button onClick={() => setView('settings')} className="p-2.5 bg-slate-900 border border-slate-800 rounded-2xl">
-              <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path></svg>
-           </button>
+           <div className="flex items-center gap-2">
+              {isSyncing && <div className="w-2 h-2 bg-blue-500 rounded-full animate-ping mr-2"></div>}
+              <button onClick={() => setView('settings')} className="p-2.5 bg-slate-900 border border-slate-800 rounded-2xl">
+                  <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path></svg>
+              </button>
+           </div>
         </header>
       )}
 
@@ -312,7 +329,6 @@ const App: React.FC = () => {
                 </div>
              </div>
              
-             {/* Fixed Bottom Action Container */}
              <div className="fixed bottom-0 left-0 right-0 p-8 pt-16 pb-12 bg-gradient-to-t from-[#020617] via-[#020617]/95 to-transparent z-50">
                 <button 
                   onClick={() => { setSellQuantity(1); setIsSelling(true); }} 
@@ -386,9 +402,23 @@ const App: React.FC = () => {
 
              <section className="space-y-4">
                 <div className="glass-card rounded-[2.5rem] overflow-hidden border-slate-800/50 shadow-xl">
-                   <button onClick={exportBackup} className="w-full p-7 flex items-center justify-between hover:bg-white/5 transition-all">
+                   {/* Cloud Sync Section */}
+                   <button onClick={handleManualSync} disabled={isSyncing} className={`w-full p-7 flex items-center justify-between hover:bg-white/5 transition-all ${isSyncing ? 'opacity-50' : ''}`}>
                       <div className="flex items-center gap-5">
                          <div className="p-3 bg-blue-600/10 text-blue-500 rounded-2xl"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" strokeWidth="2.5"></path></svg></div>
+                         <div className="text-left">
+                           <h4 className="text-sm font-black text-white">Đồng bộ đám mây</h4>
+                           <p className="text-[9px] font-bold text-slate-500 uppercase">{isSyncing ? 'Đang tải dữ liệu...' : 'Lấy dữ liệu từ Supabase'}</p>
+                         </div>
+                      </div>
+                      {/* Fixed: Removed duplicate strokeWidth attribute below */}
+                      <svg className={`w-5 h-5 text-slate-700 ${isSyncing ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" strokeWidth="2.5"></path></svg>
+                   </button>
+                   <div className="h-[1px] bg-white/5 mx-6"></div>
+                   
+                   <button onClick={exportBackup} className="w-full p-7 flex items-center justify-between hover:bg-white/5 transition-all">
+                      <div className="flex items-center gap-5">
+                         <div className="p-3 bg-emerald-600/10 text-emerald-500 rounded-2xl"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" strokeWidth="2.5"></path></svg></div>
                          <div className="text-left">
                            <h4 className="text-sm font-black text-white">Xuất Backup</h4>
                            <p className="text-[9px] font-bold text-slate-500 uppercase">Tải tệp tin .JSON</p>
@@ -396,10 +426,11 @@ const App: React.FC = () => {
                       </div>
                    </button>
                    <div className="h-[1px] bg-white/5 mx-6"></div>
+                   
                    <button onClick={() => fileInputRef.current?.click()} className="w-full p-7 flex items-center justify-between hover:bg-white/5 transition-all">
                       <div className="flex items-center gap-5">
                          <div className="p-3 bg-indigo-600/10 text-indigo-500 rounded-2xl"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0l-4-4m4 4v12" strokeWidth="2.5"></path></svg></div>
-                         <h4 className="text-sm font-black text-white">Khôi phục</h4>
+                         <h4 className="text-sm font-black text-white">Khôi phục tệp</h4>
                       </div>
                    </button>
                    <input type="file" ref={fileInputRef} className="hidden" accept=".json" onChange={(e) => {
@@ -432,7 +463,7 @@ const App: React.FC = () => {
         )}
       </main>
 
-      {/* Nav Bottom - Floating */}
+      {/* Nav Bottom */}
       {!isScanning && (view === 'admin_home' || view === 'pos' || view === 'inventory' || view === 'reports' || view === 'settings') && (
         <nav className="fixed bottom-8 left-8 right-8 glass-card p-4 rounded-[2.5rem] z-[100] flex justify-around items-center border border-white/10 bg-slate-900/95 shadow-[0_40px_80px_-15px_rgba(0,0,0,0.8)]">
             <button onClick={() => setView('admin_home')} className={`flex flex-col items-center gap-1.5 transition-all ${view === 'admin_home' ? 'active-tab' : 'text-slate-500'}`}><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path></svg><span className="text-[9px] font-black uppercase tracking-tighter">HOME</span></button>
