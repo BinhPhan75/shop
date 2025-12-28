@@ -1,13 +1,17 @@
 
 export interface Product {
   id: string;
+  sku?: string;
   name: string;
+  brand?: string;
   description: string;
   purchasePrice: number;
   sellingPrice: number;
   stock: number;
+  unit?: string;
   imageUrl: string;
   createdAt: number;
+  category?: string;
 }
 
 export interface CustomerInfo {
@@ -26,9 +30,18 @@ export interface Sale {
   totalAmount: number;
   timestamp: number;
   customer?: CustomerInfo;
+  status?: 'success' | 'pending' | 'shipping';
 }
 
-export type ViewState = 'dashboard' | 'list' | 'add' | 'scan' | 'detail' | 'settings' | 'reports';
+export type ViewState = 
+  | 'admin_home' 
+  | 'pos' 
+  | 'inventory' 
+  | 'reports' 
+  | 'settings' 
+  | 'product_detail' 
+  | 'product_form';
+
 export type UserRole = 'admin' | 'user';
 
 export interface ScanResult {
